@@ -1,23 +1,19 @@
+import moment from "moment";
 import React, { useEffect, useState } from "react";
-import { Scatter } from "react-chartjs-2";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  TooltipProps,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { ValueType } from "recharts/types/component/DefaultTooltipContent";
 import useSWR from "swr";
 
 // import logo from "./logo.svg";
-
-interface IChartVector {
-  x: Date;
-  y: number;
-}
-
-interface IChartData {
-  datasets: [
-    {
-      label: string;
-      borderColor: string;
-      data: Array<IChartVector>;
-    }
-  ];
-}
 
 type TResults = Array<{
   time: {
@@ -37,68 +33,6 @@ type TResults = Array<{
 
 const DATA_ENDPOINT = "http://167.114.135.147:8000/data";
 
-const options = {
-  legend: {
-    display: false,
-  },
-  scales: {
-    yAxes: [
-      {
-        ticks: {
-          max: 100,
-          min: 0,
-        },
-        scaleLabel: {
-          display: true,
-          labelString: "Success Rate, %",
-        },
-      },
-    ],
-    xAxes: [
-      {
-        type: "time",
-        time: {
-          unit: "second",
-          minUnit: "minute",
-          unitStepSize: 100,
-          displayFormats: {
-            second: "h:mm a",
-          },
-        },
-        ticks: {
-          autoSkip: true,
-          maxTicksLimit: 20,
-        },
-        display: true,
-        scaleLabel: {
-          display: true,
-          labelString: "Time",
-        },
-      },
-    ],
-    // zoom: {
-    //   zoom: {
-    //     enabled: false,
-    //     drag: true,
-    //     mode: "x",
-    //     // rangeMin: {
-    //     //   x: "Jan",
-    //     //   y: null
-    //     // },
-    //     // rangeMax: {
-    //     //   x: "June",
-    //     //   y: null
-    //     // }
-    //   },
-    //   pan: {
-    //     enabled: true,
-    //     mode: "x",
-    //     speed: 2,
-    //   },
-    // },
-  },
-};
-
 export enum TIME_SCALE {
   ONE_HOUR = 3600,
   TWO_HOURS = 7200,
@@ -112,16 +46,36 @@ interface Props {
   timeScale: TIME_SCALE;
 }
 
+interface IChartVector {
+  time: number;
+  rate: number;
+}
+
+type ChartData = Array<IChartVector>;
+
+const CustomTooltip = (props: TooltipProps<ValueType, string | number>) => {
+  console.log("props", props); //you check payload
+  const rate = props.payload?.[0]?.payload?.rate ?? 0;
+  const timestamp = props.payload?.[0]?.payload?.time ?? 0;
+
+  return props.active ? (
+    <div className="p-2 bg-white rounded-md">
+      <p>Rate: {rate.toFixed(4)}</p>
+      <p>{moment(timestamp).format("MMMM Do YYYY, h:mm a")}</p>
+    </div>
+  ) : null;
+};
+
 export function DataChart({ timeScale }: Props) {
-  const [data, setData] = useState({
-    datasets: [
-      {
-        label: "Onion Requests Success Rate",
-        borderColor: "rgb(255, 99, 132)",
-        data: [],
-      },
-    ],
-  } as IChartData);
+  const [data, setData] = useState<ChartData>([]);
+  //   datasets: [
+  //     {
+  //       label: "Onion Requests Success Rate",
+  //       borderColor: "rgb(255, 99, 132)",
+  //       data: [],
+  //     },
+  //   ],
+  // } as IChartData);
 
   const { data: _results } = useSWR(DATA_ENDPOINT, {
     initialData: [{}],
@@ -153,30 +107,37 @@ export function DataChart({ timeScale }: Props) {
     console.log("DataChart ➡️ secondsSinceEpoch:", secondsSinceEpoch);
     console.log("DataChart ➡️ timeScale:", timeScale);
 
-    const slidingResults = filteredResults.map((r) => {
-      const time = new Date(r.time.secs_since_epoch * 1000);
+    const slidingResults: ChartData = filteredResults.map((r) => {
+      const time = r.time.secs_since_epoch * 1000;
       const rate = (100 * r.total_success) / r.total;
 
       return {
-        x: time,
-        y: rate,
+        time,
+        rate,
       };
     });
 
-    const _data: IChartData = {
-      datasets: [
-        {
-          label: "Onion Requests Success Rate",
-          borderColor: "rgb(255, 99, 132)",
-          data: slidingResults,
-        },
-      ],
-    };
-
-    setData(_data);
+    setData(slidingResults);
   }, [_results, timeScale]);
 
-  console.log("data");
+  const latestResult = Date.now() / 1000;
+  const ealiestResult = latestResult - timeScale;
 
-  return <Scatter data={data} options={options} />;
+  console.log("data", data);
+
+  return (
+    <ResponsiveContainer width="100%" height={300}>
+      <LineChart data={data}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis
+          dataKey="time"
+          domain={[ealiestResult, latestResult]}
+          tickFormatter={(timestamp: number) => moment(timestamp).format("LT")}
+        />
+        <YAxis />
+        <Tooltip content={(props) => <CustomTooltip {...props} />} />
+        <Line dot={<></>} type="monotone" dataKey="rate" stroke="#0095FF" />
+      </LineChart>
+    </ResponsiveContainer>
+  );
 }
